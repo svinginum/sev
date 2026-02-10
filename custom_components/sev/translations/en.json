@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "SEV credentials",
+        "description": "Enter your SEV User ID and API Key (from SEV customer portal).",
+        "data": {
+          "username": "User ID",
+          "password": "API Key"
+        }
+      }
+    },
+    "error": {
+      "invalid_username": "Please enter a valid User ID",
+      "invalid_password": "Please enter your API Key",
+      "invalid_auth": "Invalid User ID or API Key. Check your credentials at SEV."
+    },
+    "abort": {
+      "already_configured": "SEV is already configured"
+    }
+  }
+}
