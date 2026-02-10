@@ -45,7 +45,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up SEV sensors from a config entry."""
     coordinator: SevCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities: list[SevSensor] = []
+    entities: list[SevSensorBase] = []
 
     for meter in coordinator.meters:
         mid = meter.get("meter_id")
@@ -53,9 +53,21 @@ async def async_setup_entry(
             continue
         name = meter.get("meter_name") or meter.get("serial_number") or f"Meter {mid}"
         entities.extend([
-            SevEnergySensor(coordinator, entry.entry_id, meter, name),
-            SevCo2Sensor(coordinator, entry.entry_id, meter, name),
-            SevCostSensor(coordinator, entry.entry_id, meter, name),
+            SevEnergySensor(coordinator, entry.entry_id, meter, name, "usage", "Energy today"),
+            SevCo2Sensor(coordinator, entry.entry_id, meter, name, "co2", "CO2 today"),
+            SevCostSensor(coordinator, entry.entry_id, meter, name, "cost", "Cost today"),
+            SevEnergySensor(
+                coordinator, entry.entry_id, meter, name,
+                "usage_yesterday", "Energy yesterday",
+            ),
+            SevCo2Sensor(
+                coordinator, entry.entry_id, meter, name,
+                "co2_yesterday", "CO2 yesterday",
+            ),
+            SevCostSensor(
+                coordinator, entry.entry_id, meter, name,
+                "cost_yesterday", "Cost yesterday",
+            ),
         ])
 
     async_add_entities(entities)
@@ -65,6 +77,11 @@ class SevSensorBase(CoordinatorEntity[SevCoordinator], SensorEntity):
     """Base class for SEV sensors."""
 
     _attr_has_entity_name = True
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added, sync state from coordinator so we show data immediately."""
+        await super().async_added_to_hass()
+        self._handle_coordinator_update()
 
     def __init__(
         self,
@@ -112,7 +129,7 @@ class SevSensorBase(CoordinatorEntity[SevCoordinator], SensorEntity):
 
 
 class SevEnergySensor(SevSensorBase):
-    """Today's energy consumption (kWh) for one meter."""
+    """Energy consumption (kWh) for one meter (today or yesterday)."""
 
     def __init__(
         self,
@@ -120,6 +137,8 @@ class SevEnergySensor(SevSensorBase):
         entry_id: str,
         meter: dict,
         meter_name: str,
+        key: str,
+        name_suffix: str,
     ) -> None:
         """Initialize the energy sensor."""
         super().__init__(
@@ -127,15 +146,15 @@ class SevEnergySensor(SevSensorBase):
             entry_id=entry_id,
             meter=meter,
             meter_name=meter_name,
-            key="usage",
-            name_suffix="Energy today",
+            key=key,
+            name_suffix=name_suffix,
             device_class=SensorDeviceClass.ENERGY,
             unit=UnitOfEnergy.KILO_WATT_HOUR,
         )
 
 
 class SevCo2Sensor(SevSensorBase):
-    """Estimated CO2 (kg) for today for one meter."""
+    """Estimated CO2 (kg) for one meter (today or yesterday)."""
 
     def __init__(
         self,
@@ -143,6 +162,8 @@ class SevCo2Sensor(SevSensorBase):
         entry_id: str,
         meter: dict,
         meter_name: str,
+        key: str,
+        name_suffix: str,
     ) -> None:
         """Initialize the CO2 sensor."""
         super().__init__(
@@ -150,8 +171,8 @@ class SevCo2Sensor(SevSensorBase):
             entry_id=entry_id,
             meter=meter,
             meter_name=meter_name,
-            key="co2",
-            name_suffix="CO2 today",
+            key=key,
+            name_suffix=name_suffix,
             device_class=SensorDeviceClass.CO2,
             unit="kg",
             state_class=SensorStateClass.MEASUREMENT,
@@ -159,7 +180,7 @@ class SevCo2Sensor(SevSensorBase):
 
 
 class SevCostSensor(SevSensorBase):
-    """Estimated cost (DKK) for today for one meter."""
+    """Estimated cost (DKK) for one meter (today or yesterday)."""
 
     def __init__(
         self,
@@ -167,6 +188,8 @@ class SevCostSensor(SevSensorBase):
         entry_id: str,
         meter: dict,
         meter_name: str,
+        key: str,
+        name_suffix: str,
     ) -> None:
         """Initialize the cost sensor."""
         super().__init__(
@@ -174,8 +197,8 @@ class SevCostSensor(SevSensorBase):
             entry_id=entry_id,
             meter=meter,
             meter_name=meter_name,
-            key="cost",
-            name_suffix="Cost today",
+            key=key,
+            name_suffix=name_suffix,
             device_class=SensorDeviceClass.MONETARY,
             unit="DKK",
             state_class=SensorStateClass.TOTAL,

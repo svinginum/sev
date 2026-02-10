@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -12,6 +13,9 @@ from .const import DOMAIN, SCAN_INTERVAL_MINUTES
 from .api import SevApiClient, SevApiError
 
 _LOGGER = logging.getLogger(__name__)
+
+# API expects dates in local Faroese time
+FAROE_TZ = ZoneInfo("Atlantic/Faroe")
 
 
 def _flatten_meters(data: list[dict]) -> list[dict]:
@@ -36,11 +40,12 @@ def _flatten_meters(data: list[dict]) -> list[dict]:
     return meters
 
 
-def _date_range_today_local() -> tuple[str, str]:
-    """Return from_date and to_date for today in local Faroese time (API uses local time)."""
-    # Use UTC for simplicity; SEV doc says "local Faroese time" - for exact match you'd use zone.
-    now = datetime.utcnow()
-    from_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+def _date_range_local(day_offset: int = 0) -> tuple[str, str]:
+    """Return from_date and to_date for a day in local Faroese time (API uses local time).
+    day_offset=0 is today, day_offset=-1 is yesterday.
+    """
+    now = datetime.now(FAROE_TZ)
+    from_dt = (now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=day_offset))
     to_dt = from_dt + timedelta(days=1)
     return (
         from_dt.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -79,35 +84,66 @@ class SevCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # 1) Get available meters (1 call)
             raw_meters = await self._client.get_available_meters()
             self._meters_flat = _flatten_meters(raw_meters)
+            empty = {
+                "meters": self._meters_flat,
+                "usage": [],
+                "co2": [],
+                "cost": [],
+                "usage_yesterday": [],
+                "co2_yesterday": [],
+                "cost_yesterday": [],
+            }
             if not self._meters_flat:
-                return {
-                    "meters": self._meters_flat,
-                    "usage": [],
-                    "co2": [],
-                    "cost": [],
-                }
+                return empty
 
             meter_ids = [m["meter_id"] for m in self._meters_flat if m.get("meter_id") is not None]
             if not meter_ids:
-                return {
-                    "meters": self._meters_flat,
-                    "usage": [],
-                    "co2": [],
-                    "cost": [],
-                }
+                return empty
 
-            from_date, to_date = _date_range_today_local()
+            from_today, to_today = _date_range_local(0)
+            from_yesterday, to_yesterday = _date_range_local(-1)
+            _LOGGER.debug(
+                "SEV requesting today %s–%s and yesterday %s–%s (Faroese) for meter_ids %s",
+                from_today,
+                to_today,
+                from_yesterday,
+                to_yesterday,
+                meter_ids,
+            )
 
-            # 2–4) Usage, CO2, cost (3 calls) for today
-            usage = await self._client.get_hourly_kwh_usage(meter_ids, from_date, to_date)
-            co2 = await self._client.get_estimated_co2(meter_ids, from_date, to_date)
-            cost = await self._client.get_estimated_cost(meter_ids, from_date, to_date)
+            # Today: usage, CO2, cost (3 calls)
+            usage_today = await self._client.get_hourly_kwh_usage(meter_ids, from_today, to_today)
+            co2_today = await self._client.get_estimated_co2(meter_ids, from_today, to_today)
+            cost_today = await self._client.get_estimated_cost(meter_ids, from_today, to_today)
+
+            # Yesterday: usage, CO2, cost (3 calls) – usually has data when today is still empty
+            usage_yesterday = await self._client.get_hourly_kwh_usage(
+                meter_ids, from_yesterday, to_yesterday
+            )
+            co2_yesterday = await self._client.get_estimated_co2(
+                meter_ids, from_yesterday, to_yesterday
+            )
+            cost_yesterday = await self._client.get_estimated_cost(
+                meter_ids, from_yesterday, to_yesterday
+            )
+
+            for name, lst in (
+                ("usage_today", usage_today),
+                ("usage_yesterday", usage_yesterday),
+                ("co2_today", co2_today),
+                ("cost_today", cost_today),
+            ):
+                total = sum(len(item.get("readings") or []) for item in lst)
+                _LOGGER.debug("SEV API %s: %s readings", name, total)
 
             return {
                 "meters": self._meters_flat,
-                "usage": usage,
-                "co2": co2,
-                "cost": cost,
+                "usage": usage_today,
+                "co2": co2_today,
+                "cost": cost_today,
+                "usage_yesterday": usage_yesterday,
+                "co2_yesterday": co2_yesterday,
+                "cost_yesterday": cost_yesterday,
             }
         except SevApiError as err:
             raise UpdateFailed(f"SEV API error: {err}") from err

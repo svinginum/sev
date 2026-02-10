@@ -6,11 +6,11 @@
 
 - **Config flow**: Add the integration via **Settings → Devices & services → Add integration** and search for "SEV". Enter your SEV User ID and API Key.
 - **Sensors per meter**: For each electricity meter you have access to, the integration creates:
-  - **Energy today** – kWh consumed today
-  - **CO₂ today** – Estimated CO₂ (kg) from consumption today
-  - **Cost today** – Estimated cost (DKK) for today
+  - **Energy today** / **Energy yesterday** – kWh consumed
+  - **CO₂ today** / **CO₂ yesterday** – Estimated CO₂ (kg)
+  - **Cost today** / **Cost yesterday** – Estimated cost (DKK)
 
-Data is updated every 30 minutes to respect the SEV API limit of 10 calls per 5 minutes.
+Data is updated every 30 minutes. Dates use Faroese local time. “Yesterday” usually has data even when “today” is still empty (API delay).
 
 ## Getting your SEV API credentials
 
@@ -33,9 +33,15 @@ You need a **User ID** and **API Key** from SEV. These are the same credentials 
 2. Restart Home Assistant.
 3. Add the integration via **Settings → Devices & services → Add integration → SEV**.
 
+## Seeing your data
+
+- **Developer tools → States**: Search for `sev` or your meter name to see all SEV entities and their values.
+- **Dashboard**: Add a card (e.g. “Entities” or “Statistic”) and pick the SEV sensors.
+- If values stay at 0 or unknown: “Yesterday” sensors often get data first; “today” can be empty until the API has hourly data. Enable **Settings → System → Logging** and set `custom_components.sev` to **Debug** to see what the API returns.
+
 ## API limits
 
-The SEV API allows a maximum of **10 requests per 5 minutes**. This integration uses 4 requests per update (meters, usage, CO₂, cost) and updates every 30 minutes, so it stays within the limit.
+The SEV API allows a maximum of **10 requests per 5 minutes**. This integration uses 7 requests per update (meters + today and yesterday usage/CO₂/cost) and updates every 30 minutes, so it stays within the limit.
 
 ## Disclaimer
 
