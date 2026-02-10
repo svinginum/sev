@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN, SCAN_INTERVAL_MINUTES
@@ -85,6 +87,7 @@ class SevCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(
         self,
         hass,
+        entry: ConfigEntry,
         username: str,
         password: str,
         session,
@@ -94,10 +97,21 @@ class SevCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass,
             _LOGGER,
             name=DOMAIN,
+            config_entry=entry,
             update_interval=timedelta(minutes=SCAN_INTERVAL_MINUTES),
         )
         self._client = SevApiClient(username=username, password=password, session=session)
         self._meters_flat: list[dict] = []
+
+    @callback
+    def _schedule_refresh(self) -> None:
+        """Schedule next refresh and log for debugging."""
+        super()._schedule_refresh()
+        if self._unsub_refresh and self._update_interval:
+            _LOGGER.debug(
+                "SEV: next refresh in %s minutes",
+                int(self._update_interval.total_seconds() / 60),
+            )
 
     @property
     def meters(self) -> list[dict]:

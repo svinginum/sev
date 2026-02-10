@@ -27,6 +27,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = aiohttp_client.async_get_clientsession(hass)
     coordinator = SevCoordinator(
         hass,
+        entry,
         username=entry.data[CONF_USERNAME],
         password=entry.data[CONF_PASSWORD],
         session=session,
