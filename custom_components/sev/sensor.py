@@ -43,7 +43,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up SEV sensors from a config entry."""
+    """Set up SEV sensors from a config entry. Only the 9 entities the user asked for."""
     coordinator: SevCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[SevSensorBase] = []
 
@@ -52,22 +52,18 @@ async def async_setup_entry(
         if mid is None:
             continue
         name = meter.get("meter_name") or meter.get("serial_number") or f"Meter {mid}"
+        # Order: Estimated cost til EOM, Estimated energy til EOM, Cost last month, Cost yesterday,
+        # Cost today, Energy yesterday, Energy today, Energy last month, CO2 yesterday
         entities.extend([
-            SevEnergySensor(coordinator, entry.entry_id, meter, name, "usage", "Energy today"),
-            SevCo2Sensor(coordinator, entry.entry_id, meter, name, "co2", "CO2 today"),
+            SevEstimatedCostSensor(coordinator, entry.entry_id, meter, name),
+            SevEstimatedEnergySensor(coordinator, entry.entry_id, meter, name),
+            SevCostSensor(coordinator, entry.entry_id, meter, name, "cost_last_month", "Cost last month"),
+            SevCostSensor(coordinator, entry.entry_id, meter, name, "cost_yesterday", "Cost yesterday"),
             SevCostSensor(coordinator, entry.entry_id, meter, name, "cost", "Cost today"),
-            SevEnergySensor(
-                coordinator, entry.entry_id, meter, name,
-                "usage_yesterday", "Energy yesterday",
-            ),
-            SevCo2Sensor(
-                coordinator, entry.entry_id, meter, name,
-                "co2_yesterday", "CO2 yesterday",
-            ),
-            SevCostSensor(
-                coordinator, entry.entry_id, meter, name,
-                "cost_yesterday", "Cost yesterday",
-            ),
+            SevEnergySensor(coordinator, entry.entry_id, meter, name, "usage_yesterday", "Energy yesterday"),
+            SevEnergySensor(coordinator, entry.entry_id, meter, name, "usage", "Energy today"),
+            SevEnergySensor(coordinator, entry.entry_id, meter, name, "usage_last_month", "Energy last month"),
+            SevCo2Sensor(coordinator, entry.entry_id, meter, name, "co2_yesterday", "CO2 yesterday"),
         ])
 
     async_add_entities(entities)
@@ -180,7 +176,7 @@ class SevCo2Sensor(SevSensorBase):
 
 
 class SevCostSensor(SevSensorBase):
-    """Estimated cost (DKK) for one meter (today or yesterday)."""
+    """Estimated cost (DKK) for one meter (today, yesterday, or last month)."""
 
     def __init__(
         self,
@@ -203,3 +199,110 @@ class SevCostSensor(SevSensorBase):
             unit="DKK",
             state_class=SensorStateClass.TOTAL,
         )
+
+
+def _estimated_til_end_of_month(
+    value_so_far: float,
+    days_elapsed: int,
+    days_in_month: int,
+) -> float | None:
+    """Linear extrapolation: (value_so_far / days_elapsed) * days_in_month. Returns None if no data."""
+    if days_elapsed is None or days_elapsed < 1 or days_in_month is None:
+        return None
+    return round((value_so_far / days_elapsed) * days_in_month, 2)
+
+
+class SevEstimatedCostSensor(CoordinatorEntity[SevCoordinator], SensorEntity):
+    """Estimated cost (DKK) til end of month – extrapolated from this month so far."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Estimated cost til end of month"
+    _attr_native_unit_of_measurement = "DKK"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(
+        self,
+        coordinator: SevCoordinator,
+        entry_id: str,
+        meter: dict,
+        meter_name: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._meter_id = meter.get("meter_id")
+        self._attr_unique_id = f"{entry_id}_{self._meter_id}_estimated_cost_eom"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, f"{entry_id}_{self._meter_id}")},
+            "name": meter_name,
+            "manufacturer": "SEV",
+            "model": meter.get("meter_type") or "Electricity meter",
+            "via_device": (DOMAIN, entry_id),
+        }
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._handle_coordinator_update()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        data = self.coordinator.data
+        if not data:
+            self._attr_native_value = None
+            super()._handle_coordinator_update()
+            return
+        cost_this_month = _sum_readings(data.get("cost_this_month") or [], self._meter_id)
+        days_elapsed = data.get("days_elapsed_this_month") or 0
+        days_in_month = data.get("days_in_month") or 31
+        self._attr_native_value = _estimated_til_end_of_month(
+            cost_this_month, days_elapsed, days_in_month
+        )
+        super()._handle_coordinator_update()
+
+
+class SevEstimatedEnergySensor(CoordinatorEntity[SevCoordinator], SensorEntity):
+    """Estimated energy (kWh) til end of month – extrapolated from this month so far."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Estimated energy til end of month"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(
+        self,
+        coordinator: SevCoordinator,
+        entry_id: str,
+        meter: dict,
+        meter_name: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._meter_id = meter.get("meter_id")
+        self._attr_unique_id = f"{entry_id}_{self._meter_id}_estimated_energy_eom"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, f"{entry_id}_{self._meter_id}")},
+            "name": meter_name,
+            "manufacturer": "SEV",
+            "model": meter.get("meter_type") or "Electricity meter",
+            "via_device": (DOMAIN, entry_id),
+        }
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._handle_coordinator_update()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        data = self.coordinator.data
+        if not data:
+            self._attr_native_value = None
+            super()._handle_coordinator_update()
+            return
+        usage_this_month = _sum_readings(data.get("usage_this_month") or [], self._meter_id)
+        days_elapsed = data.get("days_elapsed_this_month") or 0
+        days_in_month = data.get("days_in_month") or 31
+        self._attr_native_value = _estimated_til_end_of_month(
+            usage_this_month, days_elapsed, days_in_month
+        )
+        super()._handle_coordinator_update()

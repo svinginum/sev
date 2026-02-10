@@ -5,10 +5,7 @@
 ## Features
 
 - **Config flow**: Add the integration via **Settings → Devices & services → Add integration** and search for "SEV". Enter your SEV User ID and API Key.
-- **Sensors per meter**: For each electricity meter you have access to, the integration creates:
-  - **Energy today** / **Energy yesterday** – kWh consumed
-  - **CO₂ today** / **CO₂ yesterday** – Estimated CO₂ (kg)
-  - **Cost today** / **Cost yesterday** – Estimated cost (DKK)
+- **Sensors per meter** (9 per meter): Estimated cost til end of month, Estimated energy til end of month, Cost last month, Cost yesterday, Cost today, Energy yesterday, Energy today, Energy last month, CO₂ yesterday. (Estimates use this month’s data so far, extrapolated to end of month.)
 
 Data is updated every 30 minutes. Dates use Faroese local time. “Yesterday” usually has data even when “today” is still empty (API delay).
 
@@ -39,9 +36,26 @@ You need a **User ID** and **API Key** from SEV. These are the same credentials 
 - **Dashboard**: Add a card (e.g. “Entities” or “Statistic”) and pick the SEV sensors.
 - If values stay at 0 or unknown: “Yesterday” sensors often get data first; “today” can be empty until the API has hourly data. Enable **Settings → System → Logging** and set `custom_components.sev` to **Debug** to see what the API returns.
 
+## Versioning (for developers)
+
+- **Single source of truth:** `custom_components/sev/manifest.json` → `"version": "x.y.z"`. Home Assistant and HACS read this.
+- **Scheme:** Use [SemVer](https://semver.org): `MAJOR.MINOR.PATCH` (e.g. `1.0.0`, `1.1.0`, `1.0.1`).
+  - **MAJOR** – breaking changes (e.g. config or entity IDs change).
+  - **MINOR** – new features, no breaking changes.
+  - **PATCH** – bug fixes only.
+- **Releasing a new version:**
+  1. Bump `version` in `custom_components/sev/manifest.json`.
+  2. Commit and push.
+  3. Create a **Git tag** (and optionally a **GitHub Release**):
+     ```bash
+     git tag v1.0.1
+     git push origin v1.0.1
+     ```
+  - HACS will show the latest tags/releases when users install or update. The tag can be `v1.0.1` or `1.0.1`; the value in `manifest.json` should match (without the `v` is fine: `1.0.1`).
+
 ## API limits
 
-The SEV API allows a maximum of **10 requests per 5 minutes**. This integration uses 7 requests per update (meters + today and yesterday usage/CO₂/cost) and updates every 30 minutes, so it stays within the limit.
+The SEV API allows a maximum of **10 requests per 5 minutes**. This integration uses 10 requests per update (meters + today, yesterday, and last month usage/CO₂/cost) and updates every 30 minutes, so it stays within the limit.
 
 ## Disclaimer
 

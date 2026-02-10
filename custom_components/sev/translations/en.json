@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "SEV credentials",
-        "description": "Enter your SEV User ID and API Key (from SEV customer portal).",
+        "description": "Enter your SEV User ID and API Key (from SEV customer portal Míttsev.fo).",
         "data": {
           "username": "User ID",
           "password": "API Key"
