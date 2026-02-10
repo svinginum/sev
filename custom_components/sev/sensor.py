@@ -154,6 +154,7 @@ class SevCo2Sensor(SevSensorBase):
             name_suffix="CO2 today",
             device_class=SensorDeviceClass.CO2,
             unit="kg",
+            state_class=SensorStateClass.MEASUREMENT,
         )
 
 
@@ -177,4 +178,5 @@ class SevCostSensor(SevSensorBase):
             name_suffix="Cost today",
             device_class=SensorDeviceClass.MONETARY,
             unit="DKK",
+            state_class=SensorStateClass.TOTAL,
         )
